@@ -115,21 +115,80 @@ function useOpenStatus() {
   // Lun, Mar, Ven, Sam, Dim 8h–21h
   // Mercredi, Jeudi 8h–19h
   const [now, setNow] = useState(() => new Date());
+  const [holidays, setHolidays] = useState<string[] | null>(null);
+  const [holidayName, setHolidayName] = useState<string | undefined>(undefined);
+
   useEffect(() => {
     const t = setInterval(() => setNow(new Date()), 60_000);
     return () => clearInterval(t);
   }, []);
+
+  useEffect(() => {
+    // Fetch holidays for current year from Calendarific
+    const year = new Date().getFullYear();
+    const key = (import.meta.env && (import.meta.env.VITE_CALENDARIFIC_KEY as string)) || "BYytaQn4tDlUFj2NcwBMQk5hQ7vE5Aka";
+    const url = `https://calendarific.com/api/v2/holidays?api_key=${encodeURIComponent(key)}&country=CI&year=${year}`;
+
+    let mounted = true;
+    fetch(url)
+      .then((r) => r.json())
+      .then((data) => {
+        if (!mounted) return;
+        if (data && Array.isArray(data.response?.holidays)) {
+          const list: string[] = data.response.holidays.map((h: any) => h.date?.iso).filter(Boolean);
+          setHolidays(list);
+        } else {
+          setHolidays([]);
+        }
+      })
+      .catch(() => {
+        if (!mounted) return;
+        setHolidays([]);
+      });
+
+    return () => {
+      mounted = false;
+    };
+  }, []);
+
+  // calculer l'état ouvert/fermé en fonction de l'heure actuelle et des jours de la semaine
   const h = now.getHours();
   const d = now.getDay(); // 0 = dimanche
-  if (d === 3 || d === 4) {
-    return h >= 8 && h < 19;
+
+  // check holiday match (local date YYYY-MM-DD)
+  const todayIso = now.toISOString().slice(0, 10);
+  if (holidays) {
+    const matchIndex = (holidays as string[]).indexOf(todayIso);
+    if (matchIndex !== -1) {
+  // essayer d'obtenir le nom de la fête depuis la dernière charge utile récupérée via une autre récupération rapide (optionnel)
+  // mais Calendarific a déjà renvoyé les noms lors du premier fetch ; pour éviter de stocker la charge utile complète
+  // nous faisons un deuxième fetch léger pour obtenir le nom de la fête uniquement pour aujourd'hui.
+  // Pour plus de simplicité, utiliser le tableau de réponse original du premier fetch en récupérant à nouveau les détails.
+      fetch(`https://calendarific.com/api/v2/holidays?api_key=${(import.meta.env && (import.meta.env.VITE_CALENDARIFIC_KEY as string)) || "BYytaQn4tDlUFj2NcwBMQk5hQ7vE5Aka"}&country=CI&year=${now.getFullYear()}`)
+        .then((r) => r.json())
+        .then((data) => {
+          try {
+            const found = (data.response?.holidays || []).find((h: any) => h.date?.iso === todayIso);
+            if (found) setHolidayName(found.name || found.description || undefined);
+          } catch (e) {
+            // ignore
+          }
+        })
+        .catch(() => {});
+
+    }
   }
-  return h >= 8 && h < 21;
+
+  const isOpenByHours = d === 3 || d === 4 ? h >= 8 && h < 19 : h >= 8 && h < 21;
+
+  const isHoliday = holidays ? holidays.includes(todayIso) : false;
+
+  return { open: isOpenByHours && !isHoliday, holidayName };
 }
 
 function Index() {
   const [active, setActive] = useState<Category | "Tous">("Tous");
-  const open = useOpenStatus();
+  const { open, holidayName } = useOpenStatus();
   const filtered = useMemo(
     () => (active === "Tous" ? PRODUCTS : PRODUCTS.filter((p) => p.category === active)),
     [active]
@@ -137,8 +196,8 @@ function Index() {
 
   return (
     <main className="min-h-screen bg-background text-foreground">
-      <Nav open={open} />
-      <Hero open={open} />
+      <Nav open={open} holidayName={holidayName} />
+      <Hero open={open} holidayName={holidayName} />
       <Catalog active={active} setActive={setActive} filtered={filtered} />
       <Delivery />
       <Events />
@@ -149,7 +208,7 @@ function Index() {
   );
 }
 
-function Nav({ open }: { open: boolean }) {
+function Nav({ open, holidayName }: { open: boolean; holidayName?: string }) {
   return (
     <header className="fixed top-0 left-0 right-0 z-40 backdrop-blur-md bg-background/70 border-b border-border">
       <div className="max-w-7xl mx-auto px-6 h-16 flex items-center justify-between">
@@ -166,7 +225,7 @@ function Nav({ open }: { open: boolean }) {
         <div className="flex items-center gap-3">
           <span className={`inline-flex items-center gap-2 text-xs px-3 py-1.5 rounded-full border ${open ? "border-gold/40 text-gold" : "border-border text-muted-foreground"}`}>
             <span className={`w-1.5 h-1.5 rounded-full ${open ? "bg-gold animate-pulse" : "bg-muted-foreground"}`} />
-            {open ? "Ouvert" : "Fermé"}
+            {open ? "Ouvert" : holidayName ? `Fermé — ${holidayName}` : "Fermé"}
           </span>
         </div>
       </div>
@@ -174,7 +233,7 @@ function Nav({ open }: { open: boolean }) {
   );
 }
 
-function Hero({ open }: { open: boolean }) {
+function Hero({ open, holidayName }: { open: boolean; holidayName?: string }) {
   return (
     <section id="accueil" className="relative min-h-screen flex items-center justify-center overflow-hidden">
       <img src={heroImg} alt="Cave Picolo Grand-Bassam" className="absolute inset-0 w-full h-full object-cover" width={1920} height={1280} />
@@ -206,7 +265,7 @@ function Hero({ open }: { open: boolean }) {
           <span className="flex items-center gap-2"><MapPin className="w-4 h-4 text-gold" /> {ADDRESS_SHORT}</span>
           <span className="flex items-center gap-2">
             <span className={`w-1.5 h-1.5 rounded-full ${open ? "bg-gold" : "bg-muted-foreground"}`} />
-            {open ? "Ouvert maintenant" : "Actuellement fermé"}
+            {open ? "Ouvert maintenant" : holidayName ? `Actuellement fermé — ${holidayName}` : "Actuellement fermé"}
           </span>
         </div>
       </div>

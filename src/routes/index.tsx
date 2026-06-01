@@ -124,7 +124,7 @@ function useOpenStatus() {
   }, []);
 
   useEffect(() => {
-    // Fetch holidays for current year from Calendarific
+    // Récupérer les jours fériés pour l'année en cours depuis l'API de Calendarific
     const year = new Date().getFullYear();
     const key = (import.meta.env && (import.meta.env.VITE_CALENDARIFIC_KEY as string)) || "BYytaQn4tDlUFj2NcwBMQk5hQ7vE5Aka";
     const url = `https://calendarific.com/api/v2/holidays?api_key=${encodeURIComponent(key)}&country=CI&year=${year}`;

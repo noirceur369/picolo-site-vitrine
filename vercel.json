@@ -16,7 +16,7 @@
   ],
   "functions": {
     "dist/server/server.js": {
-      "runtime": "edge"
+      "runtime": "nodejs20.x"
     }
   }
 }
